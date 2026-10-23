@@ -1349,17 +1349,26 @@ mod tests {
         let mut syn = TcpHeader::new(12345, 80, 1000, u16::MAX);
         syn.syn = true;
         // A buffer of one chunk makes a data channel of one slot.
-        let config = TcpConfig { read_buffer_size: 8192, ..TcpConfig::default() };
+        let config = TcpConfig {
+            read_buffer_size: 8192,
+            ..TcpConfig::default()
+        };
         let mut stream = IpStackTcpStream::new(peer, local, syn, up_tx, 1500, None, Arc::new(config)).unwrap();
         let syn_ack = up_rx.recv().await.unwrap();
         let local_seq = tcp_header_of(&syn_ack).sequence_number + 1;
         stream.stream_sender().send(peer_ack(1001, local_seq)).unwrap();
         tokio::task::yield_now().await;
         for (seq, flags, payload) in [(1001, ACK, &[1u8; 100][..]), (1101, ACK, &[2; 100]), (1201, ACK | FIN, &[])] {
-            stream.stream_sender().send(peer_segment(seq, local_seq, flags, u16::MAX, payload)).unwrap();
+            stream
+                .stream_sender()
+                .send(peer_segment(seq, local_seq, flags, u16::MAX, payload))
+                .unwrap();
             written(&mut up_rx).await;
         }
-        assert!(matches!(stream.tcb.lock().unwrap().get_state(), TcpState::CloseWait | TcpState::LastAck));
+        assert!(matches!(
+            stream.tcb.lock().unwrap().get_state(),
+            TcpState::CloseWait | TcpState::LastAck
+        ));
         let (_, waker) = recording_waker();
         let mut cx = Context::from_waker(&waker);
         let mut read = Vec::new();
@@ -1372,7 +1381,11 @@ mod tests {
             }
             read.extend_from_slice(buf.filled());
         }
-        assert_eq!(read, [vec![1u8; 100], vec![2u8; 100]].concat(), "bytes were lost before end-of-stream");
+        assert_eq!(
+            read,
+            [vec![1u8; 100], vec![2u8; 100]].concat(),
+            "bytes were lost before end-of-stream"
+        );
     }
 
     /// RFC 5681 §4.2: an out-of-order segment is answered at once with a duplicate ACK, whether or
